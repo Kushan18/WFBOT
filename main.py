@@ -2,11 +2,11 @@ import sys
 import os
 import logging
 import traceback
+import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
-
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
 # Ensure module path works when running via uvicorn
@@ -24,7 +24,6 @@ from groq import Groq
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("GROQ_API_KEY environment variable not set")
-
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 # MongoDB connections
@@ -37,6 +36,7 @@ if not MONGODB_URI:
 
 # Synchronous client for quick reads/writes
 sync_mongo_client = MongoClient(MONGODB_URI)
+
 # Asynchronous client for async endpoints
 async_mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
 
@@ -48,11 +48,22 @@ conversations_collection = async_mongo_client["welfarebot"]["conversations"]
 # Build LangGraph
 from agent.graph import build_graph
 from chromadb import PersistentClient
+
 chroma_client = PersistentClient(path="./chroma_storage")
+
 welfare_graph = build_graph(groq_client, sync_users_collection, sync_schemes_collection)
+
+# Scraper + scheduler (moved to top so they're defined before any endpoint uses them)
+from scraper.manager import run_scraper
+from apscheduler.schedulers.background import BackgroundScheduler
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(run_scraper, "interval", days=3, id="scraper_job")
+scheduler.start()
 
 # FastAPI app instance
 app = FastAPI(title="WelfareBot Backend")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,15 +72,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Request/Response models
 class ChatRequest(BaseModel):
     session_id: str
     message: str
 
+
 class ChatResponse(BaseModel):
     reply: str
     show_form_choice: Optional[bool] = None
     clear_session: Optional[bool] = None
+
 
 class SubmitProfileRequest(BaseModel):
     session_id: str
@@ -83,20 +97,24 @@ class SubmitProfileRequest(BaseModel):
     income_bracket: str
     aadhaar: Optional[str] = ""
 
+
 # Endpoints
 @app.get("/health")
 async def health():
     return {"status": "running", "db": "connected"}
+
 
 @app.get("/schemes")
 async def get_schemes():
     schemes = list(sync_schemes_collection.find({}, {"_id": 0}))
     return {"schemes": schemes}
 
+
 @app.get("/session")
 async def get_session(session_id: str):
     user = sync_users_collection.find_one({"session_id": session_id})
     return {"session_id": session_id, "profile": user or {}}
+
 
 @app.post("/submit-profile")
 async def submit_profile(request: SubmitProfileRequest):
@@ -107,22 +125,28 @@ async def submit_profile(request: SubmitProfileRequest):
             {"$set": profile_dict},
             upsert=True,
         )
+
         from agent.eligibility import match_schemes
+
         schemes = match_schemes(profile_dict, sync_schemes_collection)
         return {"status": "success", "schemes": schemes[:5]}
     except Exception as e:
         return {"error": str(e)}
+
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
         session_id = request.session_id
         message = request.message.strip()
+
         if not message:
             return ChatResponse(reply="Please say something.")
+
         # Determine onboarding flow
         user_doc = sync_users_collection.find_one({"session_id": session_id}) or {}
         onboarding_step = user_doc.get("onboarding_step", "name")
+
         # ---- Onboarding flow ----
         if onboarding_step == "name" and not user_doc.get("name"):
             sync_users_collection.update_one(
@@ -132,6 +156,7 @@ async def chat(request: ChatRequest):
             )
             reply = f"Hello {message}, nice to meet you! Please select your preferred language.\nCHIPS:['English','हिंदी','తెలుగు','தமிழ்','ಕನ್ನಡ']"
             return ChatResponse(reply=reply, show_form_choice=False, clear_session=False)
+
         if onboarding_step == "language" and not user_doc.get("language_preference"):
             sync_users_collection.update_one(
                 {"session_id": session_id},
@@ -140,6 +165,7 @@ async def chat(request: ChatRequest):
             )
             reply = "Great! Now we can continue. Would you like to fill a form or just chat?\nCHIPS:['📝 Fill Form','💬 Chat instead']"
             return ChatResponse(reply=reply, show_form_choice=True, clear_session=False)
+
         # Existing handling for other messages
         state = {
             "session_id": session_id,
@@ -151,10 +177,13 @@ async def chat(request: ChatRequest):
             "clear_session": None,
             "user_profile": user_doc,
         }
+
         result = welfare_graph.invoke(state)
+
         reply = result.get("reply", "Sorry, couldn't process that.")
         show_form_choice = result.get("show_form_choice", False)
         clear_session = result.get("clear_session", False)
+
         await conversations_collection.insert_one({
             "session_id": session_id,
             "user_message": message,
@@ -162,6 +191,7 @@ async def chat(request: ChatRequest):
             "intent": result.get("intent"),
             "timestamp": datetime.utcnow(),
         })
+
         return ChatResponse(
             reply=reply,
             show_form_choice=show_form_choice,
@@ -170,6 +200,7 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logging.error(f"Chat endpoint error: {e}")
         return ChatResponse(reply=f"Error: {str(e)}")
+
 
 # Startup diagnostics
 print("\n" + "=" * 50)
@@ -180,18 +211,12 @@ print(f"[OK] MongoDB connected: {sync_mongo_client}")
 print(f"[OK] Users collection: {sync_users_collection}")
 print(f"[OK] Schemes collection: {sync_schemes_collection}")
 print(f"[OK] LangGraph: {welfare_graph}")
-# Initialize Chromadb client for RAG
-chroma_client = PersistentClient(path="./chroma_storage")
+
+# Initialize Chromadb collection for RAG (reuses chroma_client created above)
 collection = chroma_client.get_or_create_collection(name="welfare_schemes")
 print("=" * 50 + "\n")
 
-
 # -------------------- API ENDPOINTS --------------------
-
-
-
-
-
 
 # Existing staging endpoint
 @app.get("/staging")
@@ -201,6 +226,7 @@ async def get_staging():
     cursor = db.staging.find({"status": "pending"}).sort("scraped_at", -1).limit(100)
     return await cursor.to_list(length=100)
 
+
 # RAG endpoint – simple semantic search over stored schemes
 @app.post("/rag")
 async def rag_query(query: dict):
@@ -208,7 +234,7 @@ async def rag_query(query: dict):
     question = query.get("question", "")
     if not question:
         raise HTTPException(status_code=400, detail="Question required")
-    # Simple embedding via Groq (you can replace with proper model later)
+
     try:
         # Use Groq to get embedding (placeholder: use text as is)
         # For now, perform a naive text match against stored documents
@@ -217,21 +243,11 @@ async def rag_query(query: dict):
         return {"matches": docs['documents'][:3]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    schemes = await cursor.to_list(length=100)
-    return schemes
+
 
 # Endpoint to manually trigger scraper
 @app.post("/scraper/run")
 async def trigger_scraper():
-    import asyncio
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, run_scraper)
     return {"status": "scraper started", "message": "Check /staging in 1-2 minutes"}
-
-# Scheduler to auto‑run scraper every 3 days
-from apscheduler.schedulers.background import BackgroundScheduler
-from scraper.manager import run_scraper
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(run_scraper, "interval", days=3, id="scraper_job")
-scheduler.start()
