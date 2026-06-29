@@ -1,4 +1,4 @@
-﻿import chromadb
+import chromadb
 from sentence_transformers import SentenceTransformer
 import logging
 
@@ -11,7 +11,9 @@ def _load():
     if _model is None:
         _model = SentenceTransformer('all-MiniLM-L6-v2')
     if _collection is None:
-        chroma = chromadb.PersistentClient(path="./chroma_storage")
+        import os
+        is_vercel = "VERCEL" in os.environ or os.path.exists("/tmp")
+        chroma = chromadb.PersistentClient(path="/tmp/chroma_storage" if is_vercel else "./chroma_storage")
         _collection = chroma.get_collection("welfare_schemes")
 
 def cached_retrieve(query, n=3):

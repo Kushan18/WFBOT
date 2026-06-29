@@ -10,7 +10,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Initialize ChromaDB client
-chroma_client = chromadb.PersistentClient(path="chroma_db")
+is_vercel = "VERCEL" in os.environ or os.path.exists("/tmp")
+chroma_client = chromadb.PersistentClient(path="/tmp/chroma_db" if is_vercel else "chroma_db")
 schemes_collection = chroma_client.get_or_create_collection(
     name="welfare_schemes",
     metadata={"hnsw:space": "cosine"}

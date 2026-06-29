@@ -80,7 +80,10 @@ def run_scraper():
             continue
         if len(s.get("description", "").strip()) < 40:
             continue
+        from datetime import datetime
         s["quality_score"] = compute_quality_score(s)
+        s["status"] = "pending"
+        s["scraped_at"] = datetime.utcnow()
         qualified.append(s)
     logger.info(f"Quality filter: {len(qualified)} schemes passed")
     qualified.sort(key=lambda x: x["quality_score"], reverse=True)

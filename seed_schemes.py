@@ -24,9 +24,18 @@ scheme_docs = [
     {
         "name": "PM KISAN Samman Nidhi",
         "description": "Direct income support of Rs 6000/year to small farmers",
-        "eligibility_rules": {"state": "all", "occupation": "farmer", "max_income": 600000},
+        "eligibility_rules": {"state": "all", "occupation": "farmer", "max_income": 600000, "max_land_size": 5.0},
         "required_documents": ["Aadhaar card", "Land ownership documents", "Bank account details"],
         "apply_link": "https://pmkisan.gov.in",
+        "deadline": "ongoing",
+        "category": "agricultural"
+    },
+    {
+        "name": "Rythu Bandhu Scheme",
+        "description": "Telangana government input support scheme providing Rs 10,000/acre per year to farmers.",
+        "eligibility_rules": {"state": "Telangana", "occupation": "farmer", "max_land_size": 25.0},
+        "required_documents": ["Aadhaar card", "Pattadar Passbook (land ownership)", "Bank account details"],
+        "apply_link": "http://rythubandhu.telangana.gov.in",
         "deadline": "ongoing",
         "category": "agricultural"
     },
@@ -123,10 +132,14 @@ scheme_docs = [
 ]
 
 inserted = 0
+updated = 0
 for doc in scheme_docs:
     if schemes.find_one({"name": doc["name"]}):
-        continue
-    schemes.insert_one(doc)
-    inserted += 1
+        schemes.update_one({"name": doc["name"]}, {"$set": doc})
+        updated += 1
+    else:
+        schemes.insert_one(doc)
+        inserted += 1
 
-print(f"Seeded {inserted} schemes successfully")
+print(f"Seeded {inserted} schemes, updated {updated} schemes successfully")
+

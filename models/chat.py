@@ -28,4 +28,7 @@ class SubmitProfileRequest(BaseModel):
     gender: str
     age: str
     income_bracket: str
+    land_size: Optional[str] = "0"
+    email: Optional[str] = ""
+    email_reminders: Optional[bool] = True
     aadhaar: Optional[str] = ""

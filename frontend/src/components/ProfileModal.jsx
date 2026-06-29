@@ -31,23 +31,25 @@ export default function ProfileModal({ sessionId, prefillName, onClose }) {
   const handleSubmit = async (e) => {
     e.preventDefault(); setError('');
     const req = ['name', 'language_preference', 'state', 'occupation', 'caste_category', 'gender', 'age', 'income_bracket', 'land_size'];
-    for (const f of req) { 
-      if (form[f] === undefined || form[f] === null || form[f].toString().trim() === '') { 
-        setError('Please fill in: ' + f.replace('_',' ')); 
-        return; 
-      } 
+    for (const f of req) {
+      if (form[f] === undefined || form[f] === null || form[f].toString().trim() === '') {
+        setError('Please fill in: ' + f.replace('_',' '));
+        return;
+      }
     }
     if (isNaN(+form.age) || +form.age < 1 || +form.age > 120) { setError('Enter a valid age (1-120).'); return; }
     if (isNaN(+form.land_size) || +form.land_size < 0) { setError('Enter a valid land size (>= 0).'); return; }
     setLoading(true);
     try {
-      const res = await axios.post(API + '/submit-profile', { 
-        session_id: sessionId, 
-        ...form, 
+      const res = await axios.post(API + '/submit-profile', {
+        session_id: sessionId,
+        ...form,
         email_reminders: !!form.email.trim()
       });
       setResult(res.data.schemes || []);
-    } catch { setError('Failed to submit. Check your connection.'); }
+    } catch {
+      setError('Failed to submit. Check your connection.');
+    }
     finally { setLoading(false); }
   };
 
@@ -59,7 +61,10 @@ export default function ProfileModal({ sessionId, prefillName, onClose }) {
     <div className='modal-overlay' onClick={e => e.target === e.currentTarget && onClose()}>
       <div className='modal-box'>
         <div className='modal-header'>
-          <div><div className='modal-title'>Found {result.length} scheme{result.length !== 1 ? 's' : ''} for you!</div><div className='modal-subtitle'>Government schemes you qualify for</div></div>
+          <div>
+            <div className='modal-title'>Found {result.length} scheme{result.length !== 1 ? 's' : ''} for you!</div>
+            <div className='modal-subtitle'>Government schemes you qualify for</div>
+          </div>
           <button className='modal-close' onClick={onClose}>x</button>
         </div>
         <div className='scheme-results'>
@@ -82,7 +87,10 @@ export default function ProfileModal({ sessionId, prefillName, onClose }) {
     <div className='modal-overlay' onClick={e => e.target === e.currentTarget && onClose()}>
       <div className='modal-box'>
         <div className='modal-header'>
-          <div><div className='modal-title'>Find Your Schemes</div><div className='modal-subtitle'>Fill in your details to see matching schemes</div></div>
+          <div>
+            <div className='modal-title'>Find Your Schemes</div>
+            <div className='modal-subtitle'>Fill in your details to see matching schemes</div>
+          </div>
           <button className='modal-close' onClick={onClose}>x</button>
         </div>
         <form className='modal-form' onSubmit={handleSubmit}>

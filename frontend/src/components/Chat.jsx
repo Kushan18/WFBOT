@@ -1,23 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import MessageBubble from './MessageBubble';
-import ChipRow from './ChipRow';
+import MessageBubble from './MessageBubble.jsx';
+import ChipRow from './ChipRow.jsx';
 import './Chat.css';
 
 const API = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '');
 
-const questionMarkIcon = `data:image/svg+xml,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-    <circle cx="50" cy="50" r="45" fill="url(#grad)" />
-    <defs>
-      <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1" />
-        <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
-      </linearGradient>
-    </defs>
-    <text x="50" y="65" font-size="50" font-weight="bold" fill="white" text-anchor="middle" font-family="Arial">?</text>
-  </svg>
-`)}`;
+const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="45" fill="url(#grad)" />
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <text x="50" y="65" font-size="50" font-weight="bold" fill="white" text-anchor="middle" font-family="Arial">?</text>
+</svg>`;
+const questionMarkIcon = `data:image/svg+xml,${encodeURIComponent(svgIcon)}`;
 
 const WELCOME = {
   id: 'w', role: 'bot',
@@ -50,7 +49,7 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
       recognition.continuous = false;
       recognition.interimResults = false;
       recognition.lang = 'en-IN';
-      
+
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         setInput(transcript);
@@ -62,16 +61,16 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
           }
         }, 500);
       };
-      
+
       recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         setIsRecording(false);
       };
-      
+
       recognition.onend = () => {
         setIsRecording(false);
       };
-      
+
       recognitionRef.current = recognition;
     }
   }, []);
@@ -109,7 +108,6 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
       if (savedSession) {
         const session = JSON.parse(savedSession);
         const now = Date.now();
-        
         // Check if session is expired
         if (now - session.timestamp < SESSION_EXPIRY) {
           setMessages(session.messages);
@@ -148,9 +146,9 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
   const addMsg = useCallback((role, text, chips = [], confidenceScore = null) => {
     setMessages(prev => [...prev, { 
       id: Date.now() + Math.random(), 
-      role, 
-      text, 
-      chips, 
+      role,
+      text,
+      chips,
       confidence_score: confidenceScore,
       timestamp: new Date() 
     }]);
@@ -226,8 +224,7 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
                 if (c.includes('Fill Form')) onOpenForm(userName);
                 else if (c.includes('Start Over')) {
                   clearSession();
-                }
-                else sendMessage(c);
+                } else sendMessage(c);
               }} disabled={loading} />
             )}
           </React.Fragment>
@@ -238,9 +235,9 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
       <form className='chat-input-bar' onSubmit={e => { e.preventDefault(); sendMessage(input); }}>
         {isListeningSupported && (
           <button 
-            type='button'
+            type='button' 
             onClick={isRecording ? stopRecording : startRecording}
-            className={`btn-mic ${isRecording ? 'recording' : ''}`}
+            className={isRecording ? 'btn-mic recording' : 'btn-mic'}
             disabled={loading}
             title={isRecording ? 'Stop recording' : 'Start voice input'}
           >
@@ -254,7 +251,10 @@ export default function Chat({ sessionId, userName, onNameCapture, onOpenForm })
         )}
         <input ref={inputRef} className='chat-input' type='text' value={input} onChange={e => setInput(e.target.value)} placeholder={isRecording ? 'Listening...' : loading ? 'WelfareBot is typing...' : 'Type a message...'} disabled={loading} autoComplete='off' />
         <button className='btn-send' type='submit' disabled={loading || !input.trim()}>
-          <svg width='20' height='20' viewBox='0 0 24 24' fill='none'><path d='M22 2L11 13' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'/><path d='M22 2L15 22L11 13L2 9L22 2Z' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'/></svg>
+          <svg width='20' height='20' viewBox='0 0 24 24' fill='none'>
+            <path d='M22 2L11 13' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'/>
+            <path d='M22 2L15 22L11 13L2 9L22 2Z' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'/>
+          </svg>
         </button>
       </form>
     </div>

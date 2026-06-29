@@ -51,7 +51,9 @@ conversations_collection = async_mongo_client["welfarebot"]["conversations"]
 from agent.graph import build_graph
 from chromadb import PersistentClient
 
-chroma_client = PersistentClient(path="./chroma_storage")
+is_vercel = "VERCEL" in os.environ or os.path.exists("/tmp")
+chroma_path = "/tmp/chroma_storage" if is_vercel else "./chroma_storage"
+chroma_client = PersistentClient(path=chroma_path)
 
 welfare_graph = build_graph(groq_client, sync_users_collection, sync_schemes_collection)
 
@@ -59,9 +61,15 @@ welfare_graph = build_graph(groq_client, sync_users_collection, sync_schemes_col
 from scraper.manager import run_scraper
 from apscheduler.schedulers.background import BackgroundScheduler
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(run_scraper, "interval", days=3, id="scraper_job")
-scheduler.start()
+scheduler = None
+if not ("VERCEL" in os.environ):
+    try:
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(run_scraper, "interval", days=3, id="scraper_job")
+        scheduler.start()
+        print("[SCHEDULER] 3-day scraper scheduler started")
+    except Exception as e:
+        print(f"[SCHEDULER] Failed to start: {e}")
 
 # FastAPI app instance
 app = FastAPI(title="WelfareBot Backend")
@@ -95,12 +103,14 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
 
-
 class ChatResponse(BaseModel):
     reply: str
     show_form_choice: Optional[bool] = None
     clear_session: Optional[bool] = None
     chips: Optional[List[str]] = None
+    user_name: Optional[str] = None
+    confidence_score: Optional[float] = None
+    language_preference: Optional[str] = None
 
 
 class SubmitProfileRequest(BaseModel):
@@ -113,6 +123,9 @@ class SubmitProfileRequest(BaseModel):
     gender: str
     age: str
     income_bracket: str
+    land_size: Optional[str] = "0"
+    email: Optional[str] = ""
+    email_reminders: Optional[bool] = True
     aadhaar: Optional[str] = ""
 
 
@@ -120,9 +133,6 @@ class SubmitProfileRequest(BaseModel):
 def generate_chips(onboarding_step: str, user_doc: dict, intent: str = None, schemes: list = None) -> List[str]:
     """Generate suggestion chips based on conversation state."""
     chips = []
-    
-    # Always add Start Over
-    chips.append("Start Over")
     
     if onboarding_step == "name":
         chips.extend(["English", "हिंदी", "తెలుగు", "தமிழ்", "ಕನ್ನಡ"])
@@ -142,6 +152,10 @@ def generate_chips(onboarding_step: str, user_doc: dict, intent: str = None, sch
         chips.extend(["18-25", "26-35", "36-50", "50+"])
     elif onboarding_step == "income_bracket":
         chips.extend(["Below 1 Lakh", "1-2.5 Lakh", "2.5-5 Lakh", "5-10 Lakh", "Above 10 Lakh"])
+    elif onboarding_step == "land_size":
+        chips.extend(["0", "1", "2.5", "5", "10", "20"])
+    elif onboarding_step == "email":
+        chips.extend(["Skip", "kushan@example.com"])
     elif onboarding_step == "confirmation":
         chips.extend(["Yes Continue", "Edit Details"])
     elif intent == "scheme_query" and schemes:
@@ -171,7 +185,11 @@ def generate_chips(onboarding_step: str, user_doc: dict, intent: str = None, sch
         ]
         chips.extend(general_replies)
     
+    # Always append Start Over at the very end
+    chips.append("Start Over")
+    
     return chips
+
 
 # Endpoints
 @app.get("/health")
@@ -195,6 +213,8 @@ async def get_session(session_id: str):
 async def submit_profile(request: SubmitProfileRequest):
     try:
         profile_dict = request.dict()
+        profile_dict["onboarding_step"] = "complete"
+        profile_dict["selected_scheme"] = None
         sync_users_collection.update_one(
             {"session_id": request.session_id},
             {"$set": profile_dict},
@@ -246,10 +266,23 @@ async def chat(request: ChatRequest):
         show_form_choice = result.get("show_form_choice", False)
         clear_session = result.get("clear_session", False)
         
-        # Generate chips based on result state
-        result_onboarding_step = result.get("onboarding_step", onboarding_step)
-        result_intent = result.get("intent")
-        chips = generate_chips(result_onboarding_step, user_doc, result_intent)
+        if clear_session:
+            sync_users_collection.delete_one({"session_id": session_id})
+            user_doc = {}
+            updated_user_doc = {}
+            user_name = None
+        else:
+            updated_user_doc = sync_users_collection.find_one({"session_id": session_id}) or {}
+            user_name = updated_user_doc.get("name")
+
+        # Get chips from graph if present, else fallback
+        chips = result.get("chips")
+        if not chips:
+            result_onboarding_step = result.get("onboarding_step", onboarding_step)
+            result_intent = result.get("intent")
+            # We can pass schemes from result if available
+            schemes_from_result = result.get("schemes")
+            chips = generate_chips(result_onboarding_step, updated_user_doc or user_doc, result_intent, schemes=schemes_from_result)
 
         await conversations_collection.insert_one({
             "session_id": session_id,
@@ -263,19 +296,27 @@ async def chat(request: ChatRequest):
         from agent.conversation_history import save_conversation
         try:
             # Get current messages from frontend or build from DB
-            existing_history = sync_users_collection.find_one({"session_id": session_id}) or {}
+            existing_history = sync_users_collection.find_one({"session_id": session_id}) or {} if not clear_session else {}
             messages = existing_history.get("messages", [])
             messages.append({"role": "user", "text": message, "timestamp": datetime.utcnow().isoformat()})
             messages.append({"role": "bot", "text": reply, "timestamp": datetime.utcnow().isoformat()})
-            save_conversation(session_id, messages, user_doc)
+            save_conversation(session_id, messages, updated_user_doc or user_doc)
         except Exception as e:
-            logger.error(f"Failed to save conversation history: {e}")
+            pass
+
+        # Calculate confidence
+        from agent.nodes import calculate_confidence
+        confidence = calculate_confidence(message, updated_user_doc or user_doc)
+        lang_pref = (updated_user_doc or user_doc).get("language_preference", "en") if not clear_session else "en"
 
         return ChatResponse(
             reply=reply,
             show_form_choice=show_form_choice,
             clear_session=clear_session,
             chips=chips,
+            user_name=user_name,
+            confidence_score=confidence,
+            language_preference=lang_pref,
         )
     except Exception as e:
         logging.error(f"Chat endpoint error: {e}")
@@ -297,12 +338,13 @@ collection = chroma_client.get_or_create_collection(name="welfare_schemes")
 print("=" * 50 + "\n")
 
 # Start Phase 7 scraper scheduler (runs every 2 days)
-try:
-    from scraper.main_scheduler import start_scheduler
-    start_scheduler()
-    print("[SCRAPER] 2-day scheduler started successfully")
-except Exception as e:
-    print(f"[SCRAPER] Scheduler startup failed: {e}")
+if not ("VERCEL" in os.environ):
+    try:
+        from scraper.main_scheduler import start_scheduler
+        start_scheduler()
+        print("[SCRAPER] 2-day scheduler started successfully")
+    except Exception as e:
+        print(f"[SCRAPER] Scheduler startup failed: {e}")
 
 # -------------------- API ENDPOINTS --------------------
 
@@ -341,6 +383,7 @@ async def get_pending_schemes():
     return {"schemes": schemes}
 
 @app.post("/admin/approve/{scheme_id}")
+@app.post("/admin/approve-staging/{scheme_id}")
 async def approve_scheme(scheme_id: str):
     """Approve a scheme from staging to pending_approval."""
     from agent.approval_workflow import ApprovalWorkflow

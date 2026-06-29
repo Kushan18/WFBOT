@@ -1,4 +1,4 @@
-﻿import os
+import os
 import pymongo
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
@@ -28,7 +28,8 @@ def run():
     schemes = list(client['welfarebot']['schemes'].find())
     logger.info(f"loaded {len(schemes)} schemes")
     model = SentenceTransformer('all-MiniLM-L6-v2')
-    chroma = chromadb.PersistentClient(path="./chroma_db")
+    is_vercel = "VERCEL" in os.environ or os.path.exists("/tmp")
+    chroma = chromadb.PersistentClient(path="/tmp/chroma_db" if is_vercel else "./chroma_db")
     try:
         chroma.delete_collection("welfare_schemes")
     except:

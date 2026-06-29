@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 import os
 import logging
 from datetime import datetime
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ class ApprovalWorkflow:
     def approve_scheme(self, scheme_id: str) -> bool:
         """Move a scheme from staging to pending_approval collection."""
         try:
-            scheme = self.staging.find_one({"_id": scheme_id})
+            oid = ObjectId(scheme_id) if isinstance(scheme_id, str) and len(scheme_id) == 24 else scheme_id
+            scheme = self.staging.find_one({"_id": oid})
             if not scheme:
                 logger.error(f"Scheme {scheme_id} not found in staging")
                 return False
@@ -44,7 +46,7 @@ class ApprovalWorkflow:
             self.pending.insert_one(scheme)
             
             # Remove from staging
-            self.staging.delete_one({"_id": scheme_id})
+            self.staging.delete_one({"_id": oid})
             
             logger.info(f"Scheme {scheme_id} moved to pending_approval")
             return True
@@ -56,7 +58,8 @@ class ApprovalWorkflow:
     def reject_scheme(self, scheme_id: str, reason: str = "") -> bool:
         """Reject a scheme from staging (delete it)."""
         try:
-            self.staging.delete_one({"_id": scheme_id})
+            oid = ObjectId(scheme_id) if isinstance(scheme_id, str) and len(scheme_id) == 24 else scheme_id
+            self.staging.delete_one({"_id": oid})
             logger.info(f"Scheme {scheme_id} rejected: {reason}")
             return True
         except Exception as e:
@@ -70,7 +73,8 @@ class ApprovalWorkflow:
     def publish_scheme(self, scheme_id: str) -> bool:
         """Move a scheme from pending_approval to live schemes collection."""
         try:
-            scheme = self.pending.find_one({"_id": scheme_id})
+            oid = ObjectId(scheme_id) if isinstance(scheme_id, str) and len(scheme_id) == 24 else scheme_id
+            scheme = self.pending.find_one({"_id": oid})
             if not scheme:
                 logger.error(f"Scheme {scheme_id} not found in pending_approval")
                 return False
@@ -88,7 +92,7 @@ class ApprovalWorkflow:
             self.schemes.insert_one(scheme)
             
             # Remove from pending
-            self.pending.delete_one({"_id": scheme_id})
+            self.pending.delete_one({"_id": oid})
             
             # Update ChromaDB with new scheme
             try:
@@ -107,7 +111,8 @@ class ApprovalWorkflow:
     def reject_pending_scheme(self, scheme_id: str, reason: str = "") -> bool:
         """Reject a scheme from pending_approval (delete it)."""
         try:
-            self.pending.delete_one({"_id": scheme_id})
+            oid = ObjectId(scheme_id) if isinstance(scheme_id, str) and len(scheme_id) == 24 else scheme_id
+            self.pending.delete_one({"_id": oid})
             logger.info(f"Scheme {scheme_id} rejected from pending: {reason}")
             return True
         except Exception as e:

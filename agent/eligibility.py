@@ -41,6 +41,19 @@ def match_schemes(user_profile: Dict[str, Any], schemes_collection: Collection) 
             ]
         })
 
+    # Add land size filter if user has it
+    if user.get("land_size") is not None:
+        try:
+            user_land = float(user.get("land_size"))
+            additional_filters.append({
+                "$or": [
+                    {"eligibility_rules.max_land_size": {"$gte": user_land}},
+                    {"eligibility_rules.max_land_size": {"$exists": False}}
+                ]
+            })
+        except (ValueError, TypeError):
+            pass
+
     # Add income filter if user has it
     if user.get("income_bracket"):
         try:
