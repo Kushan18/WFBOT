@@ -88,7 +88,7 @@ app.add_middleware(
 
 # Serve React front‑end build
 try:
-    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
+    app.mount("/", StaticFiles(directory="dist", html=True), name="frontend")
 except Exception as e:
     logging.warning(f"Static files not found: {e}. Skipping static mount.")
 
