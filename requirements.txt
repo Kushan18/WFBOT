@@ -5,12 +5,5 @@ python-dotenv
 httpx
 beautifulsoup4
 apscheduler
-datasets
-pandas
-pyarrow
-chromadb
-sentence-transformers
-langgraph
-langchain
 groq
 motor

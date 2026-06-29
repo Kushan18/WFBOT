@@ -79,7 +79,10 @@ app.add_middleware(
 )
 
 # Serve React front‑end build
-app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
+try:
+    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
+except Exception as e:
+    logging.warning(f"Static files not found: {e}. Skipping static mount.")
 
 # Fallback for any unknown route (SPA)
 @app.get("/{full_path:path}", include_in_schema=False)

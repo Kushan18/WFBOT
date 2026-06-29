@@ -13,3 +13,16 @@ venv/
 .venv/
 env/
 ENV/
+
+# Node modules and frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+welfare_2-frontend/
+
+# Log files
+server.log
+welfarebot.log
+
+# Frontend package lock files
+frontend/package-lock.json
+frontend/package-lock-kushan.json
